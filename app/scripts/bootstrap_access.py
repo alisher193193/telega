@@ -1,27 +1,39 @@
 import asyncio
-import os
-import uuid
 
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 
+from app.core.config import get_settings
+from app.core.enums import PermissionCode
 from app.db.session import engine, session_factory
 from app.models import Permission, Role, User
 from app.models.access import role_permissions, user_roles
 
+settings = get_settings()
 
 PERMISSIONS = {
-    "admin.access": "Полный административный доступ",
-    "users.manage": "Управление пользователями",
-    "directories.manage": "Управление справочниками",
-    "works.create": "Внесение выполненных работ",
-    "works.accept_internal": "Внутренняя приёмка работ",
-    "works.accept_customer": "Приёмка заказчиком",
-    "payments.manage": "Начисления и выплаты людям",
-    "cash.manage": "Управление общей кассой",
-    "reports.view": "Просмотр отчётов",
-    "acts.manage": "Формирование актов",
-    "audit.view": "Просмотр журнала изменений",
+    PermissionCode.ADMIN_ACCESS.value: "Полный административный доступ",
+    PermissionCode.USERS_MANAGE.value: "Управление пользователями",
+    PermissionCode.DIRECTORIES_MANAGE.value: "Управление справочниками",
+    PermissionCode.WORKERS_VIEW.value: "Просмотр списка работников",
+    PermissionCode.WORKERS_MANAGE.value: "Управление работниками",
+    PermissionCode.PROJECTS_VIEW.value: "Просмотр объектов",
+    PermissionCode.PROJECTS_MANAGE.value: "Управление объектами",
+    PermissionCode.WORKS_VIEW.value: "Просмотр работ",
+    PermissionCode.WORKS_CREATE.value: "Внесение выполненных работ",
+    PermissionCode.WORKS_EDIT.value: "Редактирование работ",
+    PermissionCode.WORKS_CANCEL.value: "Отмена работ",
+    PermissionCode.WORKS_ACCEPT_INTERNAL.value: "Внутренняя приёмка работ",
+    PermissionCode.WORKS_ACCEPT_CUSTOMER.value: "Приёмка заказчиком",
+    PermissionCode.PAYMENTS_VIEW.value: "Просмотр начислений и выплат",
+    PermissionCode.PAYMENTS_MANAGE.value: "Начисления и выплаты людям",
+    PermissionCode.CASH_VIEW.value: "Просмотр остатка кассы",
+    PermissionCode.CASH_MANAGE.value: "Управление общей кассой",
+    PermissionCode.REPORTS_VIEW.value: "Просмотр отчётов",
+    PermissionCode.ACTS_VIEW.value: "Просмотр актов",
+    PermissionCode.ACTS_MANAGE.value: "Формирование актов",
+    PermissionCode.EXTRA_WORKS_MANAGE.value: "Управление дополнительными работами",
+    PermissionCode.AUDIT_VIEW.value: "Просмотр журнала изменений",
 }
 
 
@@ -121,18 +133,18 @@ async def main() -> None:
 
             users_data = [
                 (
-                    int(os.environ["ILYA_TELEGRAM_ID"]),
-                    os.getenv("ILYA_FULL_NAME", "Илья"),
+                    settings.ilya_telegram_id,
+                    settings.ilya_full_name,
                     admin_role,
                 ),
                 (
-                    int(os.environ["ASAN_TELEGRAM_ID"]),
-                    os.getenv("ASAN_FULL_NAME", "Асан"),
+                    settings.asan_telegram_id,
+                    settings.asan_full_name,
                     admin_role,
                 ),
                 (
-                    int(os.environ["ALISHER_TELEGRAM_ID"]),
-                    os.getenv("ALISHER_FULL_NAME", "Alisher"),
+                    settings.alisher_telegram_id,
+                    settings.alisher_full_name,
                     developer_role,
                 ),
             ]

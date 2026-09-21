@@ -1,6 +1,4 @@
 import asyncio
-import logging
-import os
 
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
@@ -9,20 +7,17 @@ from aiogram.types import BotCommand
 
 from app.bot.handlers.start import router as start_router
 from app.bot.middlewares.access import AccessMiddleware
+from app.core.config import get_settings
+from app.core.logging import configure_logging
 from app.db.session import engine
 
 
 async def main() -> None:
-    logging.basicConfig(
-        level=logging.INFO,
-        format=(
-            "%(asctime)s | %(levelname)s | "
-            "%(name)s | %(message)s"
-        ),
-    )
+    configure_logging()
+    settings = get_settings()
 
     bot = Bot(
-        token=os.environ["BOT_TOKEN"],
+        token=settings.bot_token,
         default=DefaultBotProperties(
             parse_mode=ParseMode.HTML,
         ),
