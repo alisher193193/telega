@@ -9,3 +9,4 @@ __pycache__/
 .ruff_cache/
 backups/*
 !backups/.gitkeep
+docs
