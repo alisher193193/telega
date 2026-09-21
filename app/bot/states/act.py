@@ -8,4 +8,8 @@ class ActStates(StatesGroup):
     viewing_act = State()
     choosing_work_entry = State()
     entering_quantity = State()
+    confirming_line = State()
+    viewing_lines = State()
+    viewing_line = State()
+    entering_line_reason = State()
     entering_reason = State()

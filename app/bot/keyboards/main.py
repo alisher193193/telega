@@ -40,4 +40,3 @@ def billing_menu() -> InlineKeyboardMarkup:
     )
     builder.adjust(1)
     return builder.as_markup()
-

@@ -4,6 +4,7 @@ import datetime as dt
 from decimal import Decimal
 
 import pytest
+import uuid
 
 from app.core.exceptions import ValidationError
 from app.services import act as act_service
@@ -19,8 +20,8 @@ async def _prepare_accepted_entry(
     entry, project, contract = await work_entry_factory()
     await internal_acceptance_factory(entry.id, accepted_volume)
     await ca_service.accept(
-        db_session, work_entry_id=entry.id, volume=accepted_volume, user_id=None
-    )
+        db_session, work_entry_id=entry.id, volume=accepted_volume, user_id=db_session.info["actor_id"]
+    , idempotency_key=uuid.uuid4())
     return entry, project, contract
 
 
@@ -48,7 +49,7 @@ async def test_partial_inclusion_into_two_different_acts(
         contract_id=contract.id,
         act_number=f"A-{entry.id.hex[:6]}-1",
         act_date=dt.date.today(),
-        created_by=None,
+        created_by=db_session.info["actor_id"],
     )
     act2 = await act_service.create_draft(
         db_session,
@@ -56,15 +57,15 @@ async def test_partial_inclusion_into_two_different_acts(
         contract_id=contract.id,
         act_number=f"A-{entry.id.hex[:6]}-2",
         act_date=dt.date.today(),
-        created_by=None,
+        created_by=db_session.info["actor_id"],
     )
 
     line1 = await act_service.add_line(
-        db_session, act_id=act1.id, work_entry_id=entry.id, quantity=Decimal("25"), user_id=None
-    )
+        db_session, act_id=act1.id, work_entry_id=entry.id, quantity=Decimal("25"), user_id=db_session.info["actor_id"]
+    , idempotency_key=uuid.uuid4())
     line2 = await act_service.add_line(
-        db_session, act_id=act2.id, work_entry_id=entry.id, quantity=Decimal("15"), user_id=None
-    )
+        db_session, act_id=act2.id, work_entry_id=entry.id, quantity=Decimal("15"), user_id=db_session.info["actor_id"]
+    , idempotency_key=uuid.uuid4())
 
     assert line1.amount == Decimal("12500.00")
     assert line2.amount == Decimal("7500.00")
@@ -86,17 +87,17 @@ async def test_cannot_double_include_beyond_available_volume(
         contract_id=contract.id,
         act_number=f"A-{entry.id.hex[:6]}",
         act_date=dt.date.today(),
-        created_by=None,
+        created_by=db_session.info["actor_id"],
     )
 
     await act_service.add_line(
-        db_session, act_id=act.id, work_entry_id=entry.id, quantity=Decimal("20"), user_id=None
-    )
+        db_session, act_id=act.id, work_entry_id=entry.id, quantity=Decimal("20"), user_id=db_session.info["actor_id"]
+    , idempotency_key=uuid.uuid4())
 
     with pytest.raises(ValidationError):
         await act_service.add_line(
-            db_session, act_id=act.id, work_entry_id=entry.id, quantity=Decimal("1"), user_id=None
-        )
+            db_session, act_id=act.id, work_entry_id=entry.id, quantity=Decimal("1"), user_id=db_session.info["actor_id"]
+        , idempotency_key=uuid.uuid4())
 
 
 async def test_act_total_amount_is_sum_of_lines(
@@ -112,15 +113,15 @@ async def test_act_total_amount_is_sum_of_lines(
         contract_id=contract.id,
         act_number=f"A-{entry.id.hex[:6]}",
         act_date=dt.date.today(),
-        created_by=None,
+        created_by=db_session.info["actor_id"],
     )
 
     await act_service.add_line(
-        db_session, act_id=act.id, work_entry_id=entry.id, quantity=Decimal("10"), user_id=None
-    )
+        db_session, act_id=act.id, work_entry_id=entry.id, quantity=Decimal("10"), user_id=db_session.info["actor_id"]
+    , idempotency_key=uuid.uuid4())
     await act_service.add_line(
-        db_session, act_id=act.id, work_entry_id=entry.id, quantity=Decimal("20"), user_id=None
-    )
+        db_session, act_id=act.id, work_entry_id=entry.id, quantity=Decimal("20"), user_id=db_session.info["actor_id"]
+    , idempotency_key=uuid.uuid4())
 
     assert act.total_amount == Decimal("15000.00")
 
@@ -138,15 +139,15 @@ async def test_cancelled_act_releases_volume_for_new_act(
         contract_id=contract.id,
         act_number=f"A-{entry.id.hex[:6]}",
         act_date=dt.date.today(),
-        created_by=None,
+        created_by=db_session.info["actor_id"],
     )
     await act_service.add_line(
-        db_session, act_id=act.id, work_entry_id=entry.id, quantity=Decimal("10"), user_id=None
-    )
+        db_session, act_id=act.id, work_entry_id=entry.id, quantity=Decimal("10"), user_id=db_session.info["actor_id"]
+    , idempotency_key=uuid.uuid4())
 
     assert await act_service.available_volume_for_act(db_session, entry.id) == Decimal("0")
 
-    await act_service.cancel(db_session, act_id=act.id, reason="Ошибка в акте", user_id=None)
+    await act_service.cancel(db_session, act_id=act.id, reason="Ошибка в акте", user_id=db_session.info["actor_id"])
 
     assert await act_service.available_volume_for_act(db_session, entry.id) == Decimal("10")
 
@@ -164,17 +165,17 @@ async def test_cannot_edit_finalized_act(
         contract_id=contract.id,
         act_number=f"A-{entry.id.hex[:6]}",
         act_date=dt.date.today(),
-        created_by=None,
+        created_by=db_session.info["actor_id"],
     )
     await act_service.add_line(
-        db_session, act_id=act.id, work_entry_id=entry.id, quantity=Decimal("10"), user_id=None
-    )
-    await act_service.finalize(db_session, act_id=act.id, user_id=None)
+        db_session, act_id=act.id, work_entry_id=entry.id, quantity=Decimal("10"), user_id=db_session.info["actor_id"]
+    , idempotency_key=uuid.uuid4())
+    await act_service.finalize(db_session, act_id=act.id, user_id=db_session.info["actor_id"])
 
     with pytest.raises(ValidationError):
         await act_service.add_line(
-            db_session, act_id=act.id, work_entry_id=entry.id, quantity=Decimal("1"), user_id=None
-        )
+            db_session, act_id=act.id, work_entry_id=entry.id, quantity=Decimal("1"), user_id=db_session.info["actor_id"]
+        , idempotency_key=uuid.uuid4())
 
 
 async def test_cancel_requires_reason(db_session, work_entry_factory, internal_acceptance_factory):
@@ -187,8 +188,8 @@ async def test_cancel_requires_reason(db_session, work_entry_factory, internal_a
         contract_id=contract.id,
         act_number=f"A-{entry.id.hex[:6]}",
         act_date=dt.date.today(),
-        created_by=None,
+        created_by=db_session.info["actor_id"],
     )
 
     with pytest.raises(ValidationError):
-        await act_service.cancel(db_session, act_id=act.id, reason="  ", user_id=None)
+        await act_service.cancel(db_session, act_id=act.id, reason="  ", user_id=db_session.info["actor_id"])

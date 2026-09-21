@@ -11,7 +11,7 @@ from app.models.work_entries import WorkEntry
 
 async def lock_work_entry(session: AsyncSession, work_entry_id: uuid.UUID) -> WorkEntry:
     """Select the work entry FOR UPDATE to serialize concurrent acceptance/act operations."""
-    stmt = select(WorkEntry).where(WorkEntry.id == work_entry_id).with_for_update()
+    stmt = select(WorkEntry).where(WorkEntry.id == work_entry_id).with_for_update().execution_options(populate_existing=True)
     work_entry = await session.scalar(stmt)
 
     if work_entry is None:

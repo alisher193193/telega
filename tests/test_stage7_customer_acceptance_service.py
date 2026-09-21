@@ -3,6 +3,7 @@ from __future__ import annotations
 from decimal import Decimal
 
 import pytest
+import uuid
 
 from app.core.exceptions import ValidationError
 from app.services import customer_acceptance as ca_service
@@ -16,9 +17,9 @@ async def test_partial_customer_acceptance(db_session, work_entry_factory, inter
         db_session,
         work_entry_id=entry.id,
         volume=Decimal("20"),
-        user_id=None,
+        user_id=db_session.info["actor_id"],
         comment="Первая частичная приёмка",
-    )
+     idempotency_key=uuid.uuid4())
 
     assert acceptance.accepted_volume == Decimal("20")
 
@@ -39,8 +40,8 @@ async def test_cannot_exceed_internal_accepted_volume(
             db_session,
             work_entry_id=entry.id,
             volume=Decimal("31"),
-            user_id=None,
-        )
+            user_id=db_session.info["actor_id"],
+         idempotency_key=uuid.uuid4())
 
 
 async def test_multiple_acceptance_operations_accumulate(
@@ -49,20 +50,20 @@ async def test_multiple_acceptance_operations_accumulate(
     entry, _project, _contract = await work_entry_factory()
     await internal_acceptance_factory(entry.id, Decimal("50"))
 
-    await ca_service.accept(db_session, work_entry_id=entry.id, volume=Decimal("10"), user_id=None)
-    await ca_service.accept(db_session, work_entry_id=entry.id, volume=Decimal("15"), user_id=None)
+    await ca_service.accept(db_session, work_entry_id=entry.id, volume=Decimal("10"), user_id=db_session.info["actor_id"], idempotency_key=uuid.uuid4())
+    await ca_service.accept(db_session, work_entry_id=entry.id, volume=Decimal("15"), user_id=db_session.info["actor_id"], idempotency_key=uuid.uuid4())
 
     summary = await ca_service.get_summary(db_session, entry.id)
     assert summary.customer_accepted == Decimal("25")
     assert summary.remaining_for_customer == Decimal("25")
 
     # Exactly exhausting the remaining volume must succeed once...
-    await ca_service.accept(db_session, work_entry_id=entry.id, volume=Decimal("25"), user_id=None)
+    await ca_service.accept(db_session, work_entry_id=entry.id, volume=Decimal("25"), user_id=db_session.info["actor_id"], idempotency_key=uuid.uuid4())
 
     # ...and any further acceptance of the same (already consumed) volume must fail,
     # which is how duplicate/double-submitted operations are protected against.
     with pytest.raises(ValidationError):
-        await ca_service.accept(db_session, work_entry_id=entry.id, volume=Decimal("25"), user_id=None)
+        await ca_service.accept(db_session, work_entry_id=entry.id, volume=Decimal("25"), user_id=db_session.info["actor_id"], idempotency_key=uuid.uuid4())
 
 
 async def test_correction_reduces_accepted_volume_without_deleting_rows(
@@ -72,13 +73,13 @@ async def test_correction_reduces_accepted_volume_without_deleting_rows(
     await internal_acceptance_factory(entry.id, Decimal("50"))
 
     accepted = await ca_service.accept(
-        db_session, work_entry_id=entry.id, volume=Decimal("30"), user_id=None
-    )
+        db_session, work_entry_id=entry.id, volume=Decimal("30"), user_id=db_session.info["actor_id"]
+    , idempotency_key=uuid.uuid4())
     correction = await ca_service.correct(
         db_session,
         work_entry_id=entry.id,
         delta_volume=Decimal("-10"),
-        user_id=None,
+        user_id=db_session.info["actor_id"],
         reason="Ошибка в объёме",
     )
 
@@ -93,4 +94,4 @@ async def test_cancelled_work_entry_cannot_be_accepted(db_session, work_entry_fa
     entry, _project, _contract = await work_entry_factory(status="cancelled")
 
     with pytest.raises(ValidationError):
-        await ca_service.accept(db_session, work_entry_id=entry.id, volume=Decimal("1"), user_id=None)
+        await ca_service.accept(db_session, work_entry_id=entry.id, volume=Decimal("1"), user_id=db_session.info["actor_id"], idempotency_key=uuid.uuid4())

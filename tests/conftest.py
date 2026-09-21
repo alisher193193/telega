@@ -7,30 +7,69 @@ from decimal import Decimal
 import pytest_asyncio
 
 
+import os
+import pytest
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+from sqlalchemy.pool import NullPool
+from tests.db_safety import validate_test_database_url
+
+
+def _test_url():
+    try:
+        return validate_test_database_url(os.getenv("TEST_DATABASE_URL"), os.getenv("DATABASE_URL"))
+    except ValueError as exc:
+        raise pytest.UsageError(str(exc)) from None
+
+
+@pytest.hookimpl(tryfirst=True)
+def pytest_collection_modifyitems(items):
+    for item in items:
+        if "db_session" in item.fixturenames:
+            item.add_marker(pytest.mark.integration)
+
+
+def pytest_collection_finish(session):
+    if any(item.get_closest_marker("integration") for item in session.items):
+        _test_url()
+
+
 @pytest_asyncio.fixture
 async def db_session():
-    from sqlalchemy.ext.asyncio import AsyncSession
-
-    from app.core.config import get_settings
-
-    # Some unrelated tests monkeypatch env vars and call get_settings(), which
-    # is lru_cache'd; make sure we build the engine from the real container env.
-    get_settings.cache_clear()
-
-    from app.db.session import engine
-
-    async with engine.connect() as conn:
-        trans = await conn.begin()
-        session = AsyncSession(
-            bind=conn,
-            join_transaction_mode="create_savepoint",
-            expire_on_commit=False,
-        )
-        try:
-            yield session
-        finally:
-            await session.close()
-            await trans.rollback()
+    # Never import the application's engine. Never create/drop databases or schema.
+    target = _test_url()
+    engine = create_async_engine(target, poolclass=NullPool)
+    try:
+        async with engine.connect() as conn:
+            actual = await conn.scalar(text("SELECT current_database()"))
+            if actual != target.database or actual == "work_accounting" or not actual.endswith("_test"):
+                raise pytest.UsageError("Сервер подключил не к разрешённой тестовой БД")
+            await conn.rollback()
+            trans = await conn.begin()
+            session = AsyncSession(bind=conn, join_transaction_mode="create_savepoint", expire_on_commit=False)
+            try:
+                from app.models.access import User, Role, Permission
+                permissions = [Permission(code=code) for code in ("acts.manage", "acts.view", "works.accept_customer")]
+                role = Role(name=f"test-{uuid.uuid4().hex}", permissions=permissions)
+                actor = User(telegram_id=-uuid.uuid4().int % (2**62), full_name="Test actor", roles=[role])
+                session.add(actor)
+                # Reuse seeded permissions, if present in the manually provisioned test database.
+                from sqlalchemy import select
+                with session.no_autoflush:
+                    for permission in list(role.permissions):
+                        existing = await session.scalar(select(Permission).where(Permission.code == permission.code))
+                        if existing is not None:
+                            role.permissions.remove(permission)
+                            session.expunge(permission)
+                            role.permissions.append(existing)
+                await session.flush()
+                session.info["actor_id"] = actor.id
+                yield session
+            finally:
+                await session.close()
+                await trans.rollback()
+    finally:
+        await engine.dispose()
 
 
 @pytest_asyncio.fixture
@@ -88,3 +127,11 @@ async def internal_acceptance_factory(db_session):
         return acceptance
 
     return _create
+
+
+@pytest.fixture(autouse=True)
+def clear_settings_cache():
+    from app.core.config import get_settings
+    get_settings.cache_clear()
+    yield
+    get_settings.cache_clear()

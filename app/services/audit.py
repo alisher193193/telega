@@ -8,6 +8,7 @@ from typing import Any
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.audit import AuditLog
+from app.core.operations import request_id
 
 
 def _jsonable(value: Any) -> Any:
@@ -35,6 +36,7 @@ async def record(
     new_values: dict[str, Any] | None = None,
 ) -> AuditLog:
     log = AuditLog(
+        request_id=request_id.get() or uuid.uuid4(),
         user_id=user_id,
         action=action,
         entity_type=entity_type,

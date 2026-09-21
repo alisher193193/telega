@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import re
 import tempfile
+import os
+from contextlib import contextmanager
+from decimal import Decimal
 from pathlib import Path
 
 from openpyxl import Workbook
@@ -74,12 +77,12 @@ def build_act_workbook(
         sheet.cell(row=row_index, column=4, value=line.work_type_name)
         sheet.cell(row=row_index, column=5, value=line.location_snapshot or "")
         sheet.cell(row=row_index, column=6, value=line.unit_name)
-        sheet.cell(row=row_index, column=7, value=float(line.accepted_volume))
+        sheet.cell(row=row_index, column=7, value=line.accepted_volume)
 
-        price_cell = sheet.cell(row=row_index, column=8, value=float(line.unit_price))
+        price_cell = sheet.cell(row=row_index, column=8, value=line.unit_price)
         price_cell.number_format = _MONEY_FORMAT
 
-        amount_cell = sheet.cell(row=row_index, column=9, value=float(line.amount))
+        amount_cell = sheet.cell(row=row_index, column=9, value=line.amount)
         amount_cell.number_format = _MONEY_FORMAT
 
         comment_cell = sheet.cell(row=row_index, column=10, value=line.comment or "")
@@ -90,7 +93,7 @@ def build_act_workbook(
     total_row = row_index
     sheet.merge_cells(start_row=total_row, start_column=1, end_row=total_row, end_column=8)
     sheet.cell(row=total_row, column=1, value="Итого:").font = Font(bold=True)
-    total_cell = sheet.cell(row=total_row, column=9, value=float(act.total_amount))
+    total_cell = sheet.cell(row=total_row, column=9, value=act.total_amount)
     total_cell.number_format = _MONEY_FORMAT
     total_cell.font = Font(bold=True)
 
@@ -102,6 +105,16 @@ def build_act_workbook(
 
     _autosize_columns(sheet)
 
+    # Explicit string cell types prevent openpyxl from interpreting untrusted text as formulas.
+    for row in sheet.iter_rows():
+        for cell in row:
+            if isinstance(cell.value, Decimal):
+                # Excel numeric cells retain only 15 significant decimal digits.
+                # Preserve large exact amounts as text instead of silently rounding.
+                if len(cell.value.normalize().as_tuple().digits) > 15:
+                    cell.value = format(cell.value, "f")
+            if isinstance(cell.value, str):
+                cell.data_type = "s"
     return workbook
 
 
@@ -117,7 +130,23 @@ def generate_act_excel(
     """
     workbook = build_act_workbook(act, lines, project, contract)
 
-    tmp_dir = Path(tempfile.gettempdir())
-    file_path = tmp_dir / _safe_filename(act.act_number)
-    workbook.save(file_path)
-    return file_path
+    fd, name = tempfile.mkstemp(prefix="stage7_act_", suffix=".xlsx")
+    os.close(fd)
+    file_path = Path(name)
+    try:
+        workbook.save(file_path)
+        return file_path
+    except BaseException:
+        file_path.unlink(missing_ok=True)
+        raise
+    finally:
+        workbook.close()
+
+
+@contextmanager
+def temporary_act_excel(act, lines, project, contract):
+    path = generate_act_excel(act, lines, project, contract)
+    try:
+        yield path
+    finally:
+        path.unlink(missing_ok=True)

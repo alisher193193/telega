@@ -12,8 +12,15 @@ from app.db.repositories import customer_acceptance as ca_repo
 from app.db.repositories import internal_acceptance as ia_repo
 from app.db.repositories.work_entries import get_work_entry, lock_work_entry
 from app.models.acts import CustomerAcceptance
-from app.models.work_entries import WorkEntry, WorkStatusHistory
 from app.services import audit
+from app.services.access import require_permission
+from app.services.work_status import synchronize
+from app.core.numbers import volume as checked_volume
+from app.core.operations import operation
+from app.core.exceptions import ConflictError
+from app.db.repositories.idempotency import lock_key
+from app.db.repositories import act as act_repo
+from app.db.repositories import available_work
 
 # Statuses from which a customer acceptance operation is still allowed.
 _ACCEPTABLE_STATUSES = {
@@ -22,6 +29,7 @@ _ACCEPTABLE_STATUSES = {
     WorkEntryStatus.REQUIRES_FIX.value,
     WorkEntryStatus.SUBMITTED_CUSTOMER.value,
     WorkEntryStatus.ACCEPTED_CUSTOMER.value,
+    WorkEntryStatus.INCLUDED_IN_ACT.value,
 }
 
 
@@ -53,44 +61,20 @@ async def get_summary(session: AsyncSession, work_entry_id: uuid.UUID) -> Accept
     )
 
 
-async def list_available_for_project(
-    session: AsyncSession,
-    project_id: uuid.UUID,
-    *,
-    limit: int = 30,
-) -> list[tuple[WorkEntry, AcceptanceSummary]]:
-    """Work entries of a project that still have volume available for customer acceptance."""
-    stmt = (
-        select(WorkEntry)
-        .where(
-            WorkEntry.project_id == project_id,
-            WorkEntry.status != WorkEntryStatus.CANCELLED.value,
-        )
-        .order_by(WorkEntry.entry_date.desc())
-        .limit(limit)
-    )
-    entries = (await session.scalars(stmt)).all()
-
-    result: list[tuple[WorkEntry, AcceptanceSummary]] = []
-    for entry in entries:
-        internal_accepted = await ia_repo.total_internal_accepted_volume(session, entry.id)
-        customer_accepted = await ca_repo.total_accepted_volume(session, entry.id)
-        summary = AcceptanceSummary(
-            claimed_volume=entry.claimed_volume,
-            internal_accepted=internal_accepted,
-            customer_accepted=customer_accepted,
-        )
-        if summary.remaining_for_customer > 0:
-            result.append((entry, summary))
-
-    return result
+async def list_available_for_project(session, project_id, *, limit=10, offset=0):
+    rows = await available_work.for_acceptance(session, project_id, statuses=_ACCEPTABLE_STATUSES,
+                                             limit=limit, offset=offset)
+    return [(entry, AcceptanceSummary(entry.claimed_volume, internal, accepted))
+            for entry, internal, accepted in rows]
 
 
+@operation
 async def accept(
     session: AsyncSession,
     *,
     work_entry_id: uuid.UUID,
     volume: Decimal,
+    idempotency_key: uuid.UUID,
     user_id: uuid.UUID | None,
     comment: str | None = None,
 ) -> CustomerAcceptance:
@@ -99,6 +83,14 @@ async def accept(
     Locks the work entry row FOR UPDATE so concurrent acceptance attempts are
     serialized and the accumulated volume check stays consistent.
     """
+    await require_permission(session, user_id, "works.accept_customer")
+    volume = checked_volume(volume)
+    await lock_key(session, "customer_acceptance", idempotency_key)
+    existing = await session.scalar(select(CustomerAcceptance).where(CustomerAcceptance.idempotency_key == idempotency_key))
+    if existing is not None:
+        if existing.work_entry_id != work_entry_id or existing.accepted_volume != volume:
+            raise ConflictError("Ключ уже использован для другой приёмки")
+        return existing
     if volume <= 0:
         raise ValidationError("Объём приёмки должен быть больше нуля")
 
@@ -125,6 +117,7 @@ async def accept(
         project_id=work_entry.project_id,
         contract_id=work_entry.contract_id,
         accepted_volume=volume,
+        idempotency_key=idempotency_key,
         kind=AcceptanceKind.ACCEPT.value,
         accepted_by_user_id=user_id,
         comment=comment,
@@ -132,18 +125,7 @@ async def accept(
     session.add(acceptance)
     await session.flush()
 
-    old_status = work_entry.status
-    if old_status != WorkEntryStatus.ACCEPTED_CUSTOMER.value:
-        work_entry.status = WorkEntryStatus.ACCEPTED_CUSTOMER.value
-        session.add(
-            WorkStatusHistory(
-                work_entry_id=work_entry_id,
-                old_status=old_status,
-                new_status=work_entry.status,
-                changed_by=user_id,
-                comment="Приёмка заказчиком",
-            )
-        )
+    await synchronize(session, work_entry, user_id, "Приёмка заказчиком")
 
     await audit.record(
         session,
@@ -162,6 +144,7 @@ async def accept(
     return acceptance
 
 
+@operation
 async def correct(
     session: AsyncSession,
     *,
@@ -171,10 +154,12 @@ async def correct(
     reason: str,
 ) -> CustomerAcceptance:
     """Record a negative correction without deleting previous acceptance rows."""
+    await require_permission(session, user_id, "works.accept_customer")
+    delta_volume = checked_volume(delta_volume)
     if delta_volume >= 0:
         raise ValidationError("Корректировка должна уменьшать принятый объём (значение < 0)")
 
-    if not reason:
+    if not reason or not reason.strip():
         raise ValidationError("Для корректировки необходимо указать причину")
 
     work_entry = await lock_work_entry(session, work_entry_id)
@@ -182,6 +167,12 @@ async def correct(
 
     if customer_accepted + delta_volume < 0:
         raise ValidationError("Корректировка превышает уже принятый заказчиком объём")
+
+    occupied = await act_repo.volume_in_active_acts(session, work_entry_id)
+    if customer_accepted + delta_volume < occupied:
+        raise ValidationError("Корректировка уменьшит приёмку ниже объёма действующих актов")
+    if work_entry.status == WorkEntryStatus.CANCELLED.value:
+        raise ValidationError("Работа отменена")
 
     correction = ca_repo.create(
         work_entry_id=work_entry_id,
@@ -194,6 +185,7 @@ async def correct(
     )
     session.add(correction)
     await session.flush()
+    await synchronize(session, work_entry, user_id, "Корректировка приёмки")
 
     await audit.record(
         session,

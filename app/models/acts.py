@@ -53,6 +53,7 @@ class CustomerAcceptance(Base):
         nullable=True,
         index=True,
     )
+    idempotency_key: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True, unique=True)
     comment: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -138,6 +139,10 @@ class ActLine(Base):
     work_type_name: Mapped[str] = mapped_column(String(200), nullable=False, server_default="")
     unit_name: Mapped[str] = mapped_column(String(50), nullable=False, server_default="")
     location_snapshot: Mapped[str | None] = mapped_column(Text)
+    idempotency_key: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True, unique=True)
+    cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    cancelled_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"))
+    cancellation_reason: Mapped[str | None] = mapped_column(Text)
     comment: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

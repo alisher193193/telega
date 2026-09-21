@@ -28,7 +28,7 @@ async def get_or_raise(session: AsyncSession, act_id: uuid.UUID) -> Act:
 
 async def get_for_update(session: AsyncSession, act_id: uuid.UUID) -> Act:
     """Lock the act row to serialize concurrent line additions/removals."""
-    stmt = select(Act).where(Act.id == act_id).with_for_update()
+    stmt = select(Act).where(Act.id == act_id).with_for_update().execution_options(populate_existing=True)
     act = await session.scalar(stmt)
 
     if act is None:
@@ -37,8 +37,10 @@ async def get_for_update(session: AsyncSession, act_id: uuid.UUID) -> Act:
     return act
 
 
-async def list_lines(session: AsyncSession, act_id: uuid.UUID) -> list[ActLine]:
-    stmt = select(ActLine).where(ActLine.act_id == act_id).order_by(ActLine.created_at)
+async def list_lines(session: AsyncSession, act_id: uuid.UUID, *, limit: int | None = None, offset: int = 0) -> list[ActLine]:
+    stmt = select(ActLine).where(ActLine.act_id == act_id, ActLine.cancelled_at.is_(None)).order_by(ActLine.created_at, ActLine.id)
+    if limit is not None:
+        stmt = stmt.limit(limit).offset(offset)
     result = await session.scalars(stmt)
     return list(result.all())
 
@@ -46,8 +48,9 @@ async def list_lines(session: AsyncSession, act_id: uuid.UUID) -> list[ActLine]:
 async def list_acts(
     session: AsyncSession,
     project_id: uuid.UUID | None = None,
+    *, limit: int = 10, offset: int = 0,
 ) -> list[Act]:
-    stmt = select(Act).order_by(Act.created_at.desc())
+    stmt = select(Act).order_by(Act.created_at.desc(), Act.id).limit(limit).offset(offset)
 
     if project_id is not None:
         stmt = stmt.where(Act.project_id == project_id)
@@ -57,7 +60,7 @@ async def list_acts(
 
 
 async def get_line(session: AsyncSession, line_id: uuid.UUID) -> ActLine | None:
-    return await session.get(ActLine, line_id)
+    return await session.get(ActLine, line_id, populate_existing=True)
 
 
 async def volume_in_active_acts(
@@ -71,6 +74,7 @@ async def volume_in_active_acts(
         .join(Act, Act.id == ActLine.act_id)
         .where(
             ActLine.work_entry_id == work_entry_id,
+            ActLine.cancelled_at.is_(None),
             Act.status != ActStatus.CANCELLED.value,
         )
     )

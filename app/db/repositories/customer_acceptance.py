@@ -28,7 +28,8 @@ async def total_accepted_volume(
 ) -> Decimal:
     """Net customer-accepted volume: sum of acceptances plus (negative) corrections."""
     stmt = select(func.coalesce(func.sum(CustomerAcceptance.accepted_volume), 0)).where(
-        CustomerAcceptance.work_entry_id == work_entry_id
+        CustomerAcceptance.work_entry_id == work_entry_id,
+        CustomerAcceptance.status == "accepted",
     )
     total = await session.scalar(stmt)
     return Decimal(total)
@@ -43,8 +44,10 @@ def create(
     kind: str,
     accepted_by_user_id: uuid.UUID | None,
     comment: str | None,
+    idempotency_key: uuid.UUID | None = None,
 ) -> CustomerAcceptance:
     return CustomerAcceptance(
+        idempotency_key=idempotency_key,
         work_entry_id=work_entry_id,
         project_id=project_id,
         contract_id=contract_id,
