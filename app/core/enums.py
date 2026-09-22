@@ -81,6 +81,12 @@ class AcceptanceKind(str, Enum):
     CORRECTION = "correction"
 
 
+class ActStatus(str, Enum):
+    DRAFT = "draft"
+    FINALIZED = "finalized"
+    CANCELLED = "cancelled"
+
+
 class CashTransactionType(str, Enum):
     INCOME = "income"
     EXPENSE = "expense"

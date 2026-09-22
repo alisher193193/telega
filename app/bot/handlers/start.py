@@ -2,7 +2,7 @@ from aiogram import F, Router
 from aiogram.filters import Command, CommandStart
 from aiogram.types import Message
 
-from app.bot.keyboards.main import main_menu
+from app.bot.keyboards.main import billing_menu, main_menu
 from app.models import User
 
 
@@ -23,6 +23,14 @@ async def start_handler(
     )
 
 
+@router.message(F.text == "📄 К выставлению")
+async def billing_menu_handler(message: Message) -> None:
+    await message.answer(
+        "<b>К выставлению</b>\n\nВыберите раздел:",
+        reply_markup=billing_menu(),
+    )
+
+
 @router.message(
     F.text.in_(
         {
@@ -31,7 +39,6 @@ async def start_handler(
             "🏗 Объекты",
             "💰 Касса",
             "📊 Отчёты",
-            "📄 К выставлению",
         }
     )
 )

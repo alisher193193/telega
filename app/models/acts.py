@@ -44,6 +44,16 @@ class CustomerAcceptance(Base):
         server_default=func.now(),
     )
     status: Mapped[str] = mapped_column(String(50), nullable=False, default="accepted")
+    # Signed volume of this operation: positive for acceptance, negative for a correction.
+    accepted_volume: Mapped[Decimal] = mapped_column(Numeric(18, 3), nullable=False, server_default="0")
+    kind: Mapped[str] = mapped_column(String(20), nullable=False, server_default="accept")
+    accepted_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    idempotency_key: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True, unique=True)
     comment: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -83,6 +93,8 @@ class Act(Base):
     status: Mapped[str] = mapped_column(String(50), nullable=False, default="draft")
     total_amount: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False, default=0)
     comment: Mapped[str | None] = mapped_column(Text)
+    cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    cancellation_reason: Mapped[str | None] = mapped_column(Text)
     created_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -120,7 +132,17 @@ class ActLine(Base):
         index=True,
     )
     accepted_volume: Mapped[Decimal] = mapped_column(Numeric(18, 3), nullable=False)
+    unit_price: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False, server_default="0")
     amount: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False)
+    # Historical snapshot taken at the moment the line was added, so later edits
+    # to the source directories/work entry do not change an already-formed act.
+    work_type_name: Mapped[str] = mapped_column(String(200), nullable=False, server_default="")
+    unit_name: Mapped[str] = mapped_column(String(50), nullable=False, server_default="")
+    location_snapshot: Mapped[str | None] = mapped_column(Text)
+    idempotency_key: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True, unique=True)
+    cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    cancelled_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"))
+    cancellation_reason: Mapped[str | None] = mapped_column(Text)
     comment: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
