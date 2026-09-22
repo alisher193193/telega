@@ -118,6 +118,7 @@ class WorkSection(Base):
         nullable=True,
         index=True,
     )
+    code: Mapped[str | None] = mapped_column(String(100), nullable=True, unique=True)
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     description: Mapped[str | None] = mapped_column(Text)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)

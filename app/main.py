@@ -4,8 +4,11 @@ import logging
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
+from aiogram.fsm.storage.memory import SimpleEventIsolation
 from aiogram.types import BotCommand
 
+from app.bot.handlers.navigation import router as navigation_router
+from app.bot.handlers.directories import router as directories_router
 from app.bot.handlers.act import router as act_router
 from app.bot.handlers.customer_acceptance import router as customer_acceptance_router
 from app.bot.handlers.start import router as start_router
@@ -26,12 +29,14 @@ async def main() -> None:
         ),
     )
 
-    dispatcher = Dispatcher()
+    dispatcher = Dispatcher(events_isolation=SimpleEventIsolation())
 
     access_middleware = AccessMiddleware()
     dispatcher.message.outer_middleware(access_middleware)
     dispatcher.callback_query.outer_middleware(access_middleware)
 
+    dispatcher.include_router(navigation_router)
+    dispatcher.include_router(directories_router)
     dispatcher.include_router(customer_acceptance_router)
     dispatcher.include_router(act_router)
     dispatcher.include_router(start_router)
