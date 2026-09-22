@@ -1,3 +1,4 @@
+from app.models.directory_mutations import DirectoryMutation
 from app.models.access import Permission, Role, User
 from app.models.acts import Act, ActLine, CustomerAcceptance
 from app.models.audit import AuditLog
@@ -15,6 +16,7 @@ from app.models.work_acceptance import InternalAcceptance
 from app.models.work_entries import WorkAllocation, WorkEntry, WorkStatusHistory
 
 __all__ = [
+    "DirectoryMutation",
     "Act",
     "ActLine",
     "AuditLog",

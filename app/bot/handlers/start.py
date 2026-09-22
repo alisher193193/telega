@@ -1,3 +1,5 @@
+from html import escape
+
 from aiogram import F, Router
 from aiogram.filters import Command, CommandStart
 from aiogram.types import Message
@@ -16,7 +18,7 @@ async def start_handler(
     system_user: User,
 ) -> None:
     await message.answer(
-        f"Добро пожаловать, <b>{system_user.full_name}</b>!\n\n"
+        f"Добро пожаловать, <b>{escape(system_user.full_name)}</b>!\n\n"
         "Система рабочего и финансового учёта.\n"
         "Выберите нужный раздел:",
         reply_markup=main_menu(),
@@ -36,7 +38,6 @@ async def billing_menu_handler(message: Message) -> None:
         {
             "📝 Внести данные",
             "👥 Люди",
-            "🏗 Объекты",
             "💰 Касса",
             "📊 Отчёты",
         }

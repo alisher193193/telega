@@ -6,7 +6,7 @@ def numeric(value: Decimal, scale: int, label: str) -> Decimal:
     if not isinstance(value, Decimal) or not value.is_finite():
         raise ValidationError(f"{label}: требуется конечное десятичное число")
     bound = Decimal(10) ** (18 - scale)
-    if abs(value) >= bound:
+    if value.copy_abs() >= bound:
         raise ValidationError(f"{label}: превышен диапазон NUMERIC(18,{scale})")
     try:
         rounded = value.quantize(Decimal(1).scaleb(-scale))
