@@ -1,15 +1,13 @@
 import asyncio
+import argparse
 
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 
 from app.core.config import get_settings
 from app.core.enums import PermissionCode
-from app.db.session import engine, session_factory
 from app.models import Permission, Role, User
 from app.models.access import role_permissions, user_roles
-
-settings = get_settings()
 
 PERMISSIONS = {
     PermissionCode.ADMIN_ACCESS.value: "Полный административный доступ",
@@ -102,78 +100,96 @@ async def get_or_create_user(
     return user
 
 
-async def main() -> None:
+async def ensure_role_permissions(session) -> tuple[Role, Role]:
+    """Restore missing permissions/grants; preserve users and existing grants.
+
+    The caller owns the transaction. Repeated runs do not duplicate rows.
+    """
+    admin_role = await get_or_create_role(
+        session,
+        name="admin",
+        description="Полный административный доступ",
+    )
+    developer_role = await get_or_create_role(
+        session,
+        name="developer",
+        description="Разработчик системы",
+    )
+
+    permissions = await get_or_create_permissions(session)
+
+    # В пилоте обе роли получают полный набор прав.
+    for role in (admin_role, developer_role):
+        for permission in permissions:
+            statement = (
+                insert(role_permissions)
+                .values(
+                    role_id=role.id,
+                    permission_id=permission.id,
+                )
+                .on_conflict_do_nothing()
+            )
+            await session.execute(statement)
+
+    return admin_role, developer_role
+
+
+async def main(*, permissions_only: bool = False) -> None:
+    from app.db.session import engine, session_factory
+
+    settings = get_settings()
     async with session_factory() as session:
         async with session.begin():
-            admin_role = await get_or_create_role(
-                session,
-                name="admin",
-                description="Полный административный доступ",
-            )
-            developer_role = await get_or_create_role(
-                session,
-                name="developer",
-                description="Разработчик системы",
-            )
+            admin_role, developer_role = await ensure_role_permissions(session)
+            if permissions_only:
+                print("Разрешения ролей настроены; пользователи не изменялись")
+            else:
+                users_data = [
+                    (
+                        settings.ilya_telegram_id,
+                        settings.ilya_full_name,
+                        admin_role,
+                    ),
+                    (
+                        settings.asan_telegram_id,
+                        settings.asan_full_name,
+                        admin_role,
+                    ),
+                    (
+                        settings.alisher_telegram_id,
+                        settings.alisher_full_name,
+                        developer_role,
+                    ),
+                ]
 
-            permissions = await get_or_create_permissions(session)
+                for telegram_id, full_name, role in users_data:
+                    user = await get_or_create_user(
+                        session,
+                        telegram_id,
+                        full_name,
+                    )
 
-            # В пилоте обе роли получают полный набор прав.
-            for role in (admin_role, developer_role):
-                for permission in permissions:
                     statement = (
-                        insert(role_permissions)
+                        insert(user_roles)
                         .values(
+                            user_id=user.id,
                             role_id=role.id,
-                            permission_id=permission.id,
                         )
                         .on_conflict_do_nothing()
                     )
                     await session.execute(statement)
 
-            users_data = [
-                (
-                    settings.ilya_telegram_id,
-                    settings.ilya_full_name,
-                    admin_role,
-                ),
-                (
-                    settings.asan_telegram_id,
-                    settings.asan_full_name,
-                    admin_role,
-                ),
-                (
-                    settings.alisher_telegram_id,
-                    settings.alisher_full_name,
-                    developer_role,
-                ),
-            ]
-
-            for telegram_id, full_name, role in users_data:
-                user = await get_or_create_user(
-                    session,
-                    telegram_id,
-                    full_name,
-                )
-
-                statement = (
-                    insert(user_roles)
-                    .values(
-                        user_id=user.id,
-                        role_id=role.id,
+                    print(
+                        f"Пользователь настроен: "
+                        f"{full_name} — {role.name}"
                     )
-                    .on_conflict_do_nothing()
-                )
-                await session.execute(statement)
-
-                print(
-                    f"Пользователь настроен: "
-                    f"{full_name} — {role.name}"
-                )
 
     await engine.dispose()
     print("Начальная настройка доступа завершена")
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    parser = argparse.ArgumentParser(description="Идемпотентная настройка доступа")
+    parser.add_argument("--permissions-only", action="store_true", help="Настроить только права ролей, не изменяя пользователей")
+    args = parser.parse_args()
+    asyncio.run(main(permissions_only=args.permissions_only))
