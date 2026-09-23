@@ -3,6 +3,12 @@ from enum import Enum
 
 class PermissionCode(str, Enum):
     ADMIN_ACCESS = "admin.access"
+    PEOPLE_VIEW = "people.view"
+    PEOPLE_MANAGE = "people.manage"
+    SPECIALTIES_VIEW = "specialties.view"
+    SPECIALTIES_MANAGE = "specialties.manage"
+    CREWS_VIEW = "crews.view"
+    CREWS_MANAGE = "crews.manage"
     USERS_MANAGE = "users.manage"
     DIRECTORIES_MANAGE = "directories.manage"
     WORKERS_VIEW = "workers.view"

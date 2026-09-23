@@ -7,6 +7,7 @@ from aiogram.enums import ParseMode
 from aiogram.fsm.storage.memory import SimpleEventIsolation
 from aiogram.types import BotCommand
 
+from app.bot.handlers.people import router as people_router
 from app.bot.handlers.navigation import router as navigation_router
 from app.bot.handlers.directories import router as directories_router
 from app.bot.handlers.act import router as act_router
@@ -36,6 +37,7 @@ async def main() -> None:
     dispatcher.callback_query.outer_middleware(access_middleware)
 
     dispatcher.include_router(navigation_router)
+    dispatcher.include_router(people_router)
     dispatcher.include_router(directories_router)
     dispatcher.include_router(customer_acceptance_router)
     dispatcher.include_router(act_router)

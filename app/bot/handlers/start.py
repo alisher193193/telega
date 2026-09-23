@@ -37,7 +37,6 @@ async def billing_menu_handler(message: Message) -> None:
     F.text.in_(
         {
             "📝 Внести данные",
-            "👥 Люди",
             "💰 Касса",
             "📊 Отчёты",
         }

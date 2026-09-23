@@ -283,6 +283,7 @@ async def test_dispatcher_navigation_precedes_fsm_fields(monkeypatch):
         async def __aexit__(self, *args): pass
     monkeypatch.setattr(navigation, 'session_factory', Session)
     monkeypatch.setattr(navigation, 'require_permission', AsyncMock())
+    monkeypatch.setattr(navigation.people, 'caps', AsyncMock(return_value={'worker.view'}))
     monkeypatch.setattr(handlers, 'session_factory', Session)
     monkeypatch.setattr(catalog, 'list_page', AsyncMock(return_value=([], False)))
     monkeypatch.setattr(catalog, 'reference_labels', AsyncMock(return_value={}))

@@ -10,6 +10,12 @@ from app.models import Permission, Role, User
 from app.models.access import role_permissions, user_roles
 
 PERMISSIONS = {
+    PermissionCode.PEOPLE_VIEW.value: "Просмотр работников",
+    PermissionCode.PEOPLE_MANAGE.value: "Управление работниками",
+    PermissionCode.SPECIALTIES_VIEW.value: "Просмотр специальностей",
+    PermissionCode.SPECIALTIES_MANAGE.value: "Управление специальностями",
+    PermissionCode.CREWS_VIEW.value: "Просмотр бригад",
+    PermissionCode.CREWS_MANAGE.value: "Управление бригадами",
     PermissionCode.ADMIN_ACCESS.value: "Полный административный доступ",
     PermissionCode.USERS_MANAGE.value: "Управление пользователями",
     PermissionCode.DIRECTORIES_MANAGE.value: "Управление справочниками",

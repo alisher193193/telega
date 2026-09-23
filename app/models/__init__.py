@@ -11,7 +11,7 @@ from app.models.directories import (
     WorkType,
 )
 from app.models.cash import CashAccount, CashTransaction, WorkerAccrual, WorkerPayment
-from app.models.people import Crew, CrewMember, Worker
+from app.models.people import Crew, CrewMember, Specialty, Worker
 from app.models.work_acceptance import InternalAcceptance
 from app.models.work_entries import WorkAllocation, WorkEntry, WorkStatusHistory
 
@@ -33,6 +33,7 @@ __all__ = [
     "Unit",
     "User",
     "Worker",
+    "Specialty",
     "WorkerAccrual",
     "WorkerPayment",
     "WorkAllocation",
